@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+    <title>
+        test
+    </title>
+</head>
+
+<body>
+
+    <div id="app">
+        213
+
+    </div>
+
+</body>
+
+
+<script>
+
+    // 实现目标
+    // 1.首先通过fetch拿到 http://localhost:7200站点的 html模板
+    // 2.从中解析出外部资源地址 <script src="xxx.js"></srript>
+    // 3.通过fetch获取远程js资源，放在iframe 里执行
+
+    // 目前需要解决iframe跨域的问题 还有 把shadowroot中的document window 代理到iframe没解决
+    const documentProxyProperties = {
+        // 降级场景下需要本地特殊处理的属性
+        modifyLocalProperties: ["createElement", "createTextNode", "documentURI", "URL", "getElementsByTagName"],
+
+        // 子应用需要手动修正的属性方法
+        modifyProperties: [
+            "createElement",
+            "createTextNode",
+            "documentURI",
+            "URL",
+            "getElementsByTagName",
+            "getElementsByClassName",
+            "getElementsByName",
+            "getElementById",
+            "querySelector",
+            "querySelectorAll",
+            "documentElement",
+            "scrollingElement",
+            "forms",
+            "images",
+            "links",
+        ],
+
+        // 需要从shadowRoot中获取的属性
+        shadowProperties: [
+            "activeElement",
+            "childElementCount",
+            "children",
+            "firstElementChild",
+            "firstChild",
+            "fullscreenElement",
+            "lastElementChild",
+            "pictureInPictureElement",
+            "pointerLockElement",
+            "styleSheets",
+        ],
+
+        // 需要从shadowRoot中获取的方法
+        shadowMethods: [
+            "append",
+            "contains",
+            "getSelection",
+            "elementFromPoint",
+            "elementsFromPoint",
+            "getAnimations",
+            "replaceChildren",
+        ],
+
+        // 需要从主应用document中获取的属性
+        documentProperties: [
+            "characterSet",
+            "compatMode",
+            "contentType",
+            "designMode",
+            "dir",
+            "doctype",
+            "embeds",
+            "fullscreenEnabled",
+            "hidden",
+            "implementation",
+            "lastModified",
+            "pictureInPictureEnabled",
+            "plugins",
+            "readyState",
+            "referrer",
+            "visibilityState",
+            "fonts",
+        ],
+
+        // 需要从主应用document中获取的方法
+        documentMethods: [
+            "execCommand",
+            "caretPositionFromPoint",
+            "createRange",
+            "exitFullscreen",
+            "exitPictureInPicture",
+            "getElementsByTagNameNS",
+            "hasFocus",
+            "prepend",
+        ],
+
+        // 需要从主应用document中获取的事件
+        documentEvents: [
+            "onpointerlockchange",
+            "onpointerlockerror",
+            "onbeforecopy",
+            "onbeforecut",
+            "onbeforepaste",
+            "onfreeze",
+            "onresume",
+            "onsearch",
+            "onfullscreenchange",
+            "onfullscreenerror",
+            "onsecuritypolicyviolation",
+            "onvisibilitychange",
+        ],
+
+        // 无需修改原型的属性
+        ownerProperties: ["head", "body"],
+    };
+
+    class WujieApp extends HTMLElement {
+        connectedCallback() {
+            const shadowRoot = this.attachShadow({ mode: "open" });
+            const sandbox = getWujieById(this.getAttribute('data-wujie-id'));
+            sandbox.shadowRoot = shadowRoot
+        }
+
+        disconnectedCallback() {
+
+        }
+    }
+
+    function iframeGenerator(options) {
+        const iframe = window.document.createElement("iframe");
+        iframe.setAttribute('style', 'display: none');
+        iframe.setAttribute('src', options.mainHostPath);
+        iframe.setAttribute('name', options.name);
+        iframe.setAttribute('frameborder', 0);
+
+        window.document.body.appendChild(iframe);
+
+        const iframeWindow = iframe.contentWindow;
+        iframeWindow.__WUJIE = options.wujie;
+
+
+
+        const {
+            ownerProperties,
+            modifyProperties,
+            shadowProperties,
+            shadowMethods,
+            documentProperties,
+            documentMethods,
+            documentEvents,
+        } = documentProxyProperties;
+        // 代理 将iframe的document操作代理到shadowRoot，弄清楚sandbox.proxyDocument[propKey]指向哪里
+        console.log(iframeWindow, 'iframeWindow', options)
+        const sandbox = iframeWindow.__WUJIE
+        modifyProperties.concat(shadowProperties, shadowMethods, documentProperties, documentMethods).forEach((propKey) => {
+
+            Object.defineProperty(iframeWindow.Document.prototype, propKey, {
+                configurable: true,
+                get: () => {
+                    console.log('getwang', sandbox.proxyDocument)
+                    return sandbox.proxyDocument[propKey]
+                },
+                set: undefined,
+            });
+        })
+
+        return iframe
+    }
+    class Wujie {
+        constructor(options) {
+            this.id = options.id
+            this.shadowRoot = null
+            setWujieById(this.id, this)
+        }
+
+        preloadApp() {
+            this.iframe = iframeGenerator({ wujie: this, mainHostPath: 'http://127.0.0.1:5500', name: 'vue2' })
+
+            this.proxyDocument = new Proxy({}, {
+                get: function (_fakeDocument, propKey) {
+                    console.log('proxyDocument', propKey)
+                    if (
+                        propKey === "getElementsByTagName" ||
+                        propKey === "getElementsByClassName" ||
+                        propKey === "getElementsByName"
+                    ) {
+                        return new Proxy(this.shadowRoot.querySelectorAll, {
+                            apply(querySelectorAll, _ctx, args) {
+                                let arg = args[0];
+                                if (_ctx !== this.iframe.contentDocument) {
+                                    return _ctx[propKey].apply(_ctx, args);
+                                }
+
+                                if (propKey === "getElementsByTagName" && arg === "script") {
+                                    return this.iframe.contentDocument.scripts;
+                                }
+                                if (propKey === "getElementsByClassName") arg = "." + arg;
+                                if (propKey === "getElementsByName") arg = `[name="${arg}"]`;
+
+
+                                let res = [];
+                                try {
+                                    res = querySelectorAll.call(shadowRoot, arg);
+                                } catch (error) {
+                                    res = [];
+                                }
+
+                                return res;
+                            },
+                        });
+                    }
+                }
+            })
+
+
+        }
+    }
+    const idToSandboxCacheMap = new Map()
+
+    function setWujieById(id, wujie) {
+        idToSandboxCacheMap.set(id, wujie)
+
+    }
+    function getWujieById(id) {
+        return idToSandboxCacheMap.get(id)
+    }
+
+    window.customElements.define("wujie-app", WujieApp);
+
+
+    /*在实际使用中，页面元素没有开始渲染时，上面的代码就已经执行了，我们手动的模拟下代码执行顺序*/
+
+    function startRenderVue2() {
+        const wujie = new Wujie({ id: 'vue2' })
+        const wujieEl = document.createElement('wujie-app')
+        wujieEl.setAttribute('data-wujie-id', 'vue2')
+        const parentContainer = document.getElementById('app')
+        parentContainer.appendChild(wujieEl)
+
+        wujie.preloadApp()
+
+        const ALL_SCRIPT_REGEX = /(<script[\s\S]*?>)[\s\S]*?<\/script>/gi;
+        const SCRIPT_SRC_REGEX = /.*\ssrc=('|")?([^>'"\s]+)/;
+
+        const SCRIPT_ASYNC_REGEX = /.*\sasync\s*.*/;
+        const DEFER_ASYNC_REGEX = /.*\sdefer\s*.*/;
+        const genScriptReplaceSymbol = (scriptSrc, type = "") =>
+            `<!-- ${type} script ${scriptSrc} replaced by wujie -->`;
+
+        fetch('http://localhost:7200').then((response) => {
+
+            return response.text();
+        }).then(async template => {
+
+            // 替换template中的<script>标签
+            const scripts = []
+            template = template.replace(ALL_SCRIPT_REGEX, (match, scriptTag) => {
+
+                const matchedScriptSrcMatch = scriptTag.match(SCRIPT_SRC_REGEX);
+                let matchedScriptSrc = matchedScriptSrcMatch && matchedScriptSrcMatch[2];
+
+
+                const isAsyncScript = !!scriptTag.match(SCRIPT_ASYNC_REGEX);
+                const isDeferScript = !!scriptTag.match(DEFER_ASYNC_REGEX);
+                const baseURI = 'http://localhost:7200/'
+                matchedScriptSrc = new URL(matchedScriptSrc, baseURI).toString();
+                scripts.push(
+                    isAsyncScript || isDeferScript
+                        ? {
+                            async: isAsyncScript,
+                            defer: isDeferScript,
+                            src: matchedScriptSrc,
+
+                        }
+                        : {
+                            src: matchedScriptSrc,
+
+                        }
+                );
+                return genScriptReplaceSymbol(matchedScriptSrc, (isAsyncScript && "async") || (isDeferScript && "defer") || "");
+
+            })
+
+            let processedHtml = document.createElement("html");
+            processedHtml.innerHTML = template;
+            wujie.shadowRoot.appendChild(processedHtml);
+
+            return scripts
+        }).then(async scripts => {
+
+            const requestIdleCallback = (cb) => setTimeout(cb, 1)
+            const getExternalScripts = () => {
+                return scripts.map((script) => {
+                    const { src, async, defer, module, ignore } = script;
+                    let contentPromise = new Promise((resolve, reject) => {
+                        return requestIdleCallback(() => {
+                            return fetch(src).then(response => {
+                                return response.text();
+                            }).then(a => {
+                                return resolve(a)
+                            })
+                        })
+                    })
+                    return { ...script, contentPromise };
+                });
+            }
+            const scriptList = await getExternalScripts()
+
+            scriptList.forEach(scriptResult => {
+                scriptResult.contentPromise.then(content => {
+                    const iframeWindow = wujie.iframe.contentWindow;
+                    const scriptElement = iframeWindow.document.createElement("script");
+                    scriptElement.textContent = content || "";
+                    const container = iframeWindow.document.querySelector('head')
+                    container.appendChild(scriptElement)
+                })
+            })
+
+
+            // const html = iframeDocument.createElement('html')
+            // html.innerHTML = template
+        })
+
+
+
+    }
+
+    startRenderVue2()
+
+</script>
+
+</html>

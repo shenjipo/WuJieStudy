@@ -1,0 +1,32 @@
+{
+    "name": "package-a",
+    "version": "0.0.0",
+    "description": "> TODO: description",
+    "author": "wang <1532281546@qq.com>",
+    "homepage": "",
+    "license": "ISC",
+    "main": "lib/package-a.js",
+    "directories": {
+        "lib": "lib",
+        "test": "__tests__"
+    },
+    "files": [
+        "lib"
+    ],
+    "scripts": {
+        "start": "cross-env BABEL_ENV=esm babel ./src --out-dir ./esm --extensions .ts --source-maps inline"
+    },
+    "devDependencies": {
+        "@babel/cli": "^7.18.6",
+        "@babel/core": "^7.14.6",
+        "@babel/plugin-transform-runtime": "^7.18.6",
+        "@babel/preset-env": "^7.14.7",
+        "@babel/preset-typescript": "^7.18.6",
+        "babel-loader": "8.1.0",
+        "typescript": "^4.4.2"
+    },
+    "dependencies": {
+        "cross-env": "7.0.3",
+        "@babel/runtime": "^7.18.6"
+    }
+}

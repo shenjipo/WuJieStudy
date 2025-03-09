@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+    <title>
+        test5
+    </title>
+</head>
+
+<body>
+
+
+</body>
+<script>
+    const iframe = {
+        dom: {
+            addChild: null,
+            createNode: null
+        }
+    }
+
+    const shadowRoot = {
+        proxyDocument: null,
+        addChild: () => {
+            let name = 'addChild'
+            return name
+        },
+        createNode: () => {
+            let name = 'createNode'
+            return name
+        }
+    }
+
+    const proxyKeys = ['addChild', 'createNode']
+
+    proxyKeys.forEach(key => {
+        Object.defineProperty(iframe.dom, key, {
+            get: function () {
+                return shadowRoot.proxyDocument[key]
+            }
+        })
+    })
+
+    shadowRoot.proxyDocument = new Proxy({}, {
+        get: function (_fakeDocument, propKey) {
+            if (propKey === 'addChild') {
+                return new Proxy(shadowRoot.addChild, {
+                    apply(addChild, _ctx, args) {
+                        let arg = args[0];
+                        let res = addChild.call(shadowRoot, arg);
+                        return res
+                    }
+                })
+            } else if (propKey === 'createNode') {
+                return new Proxy(shadowRoot.createNode, {
+                    apply(createNode, _ctx, args) {
+                        let arg = args[0];
+                        let res = createNode.call(shadowRoot, arg);
+                        return res
+                    }
+                })
+            }
+        },
+    })
+
+    const res = iframe.dom.addChild()
+    console.log(res)
+</script>
+
+
+
+</html>
