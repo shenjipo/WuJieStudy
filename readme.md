@@ -14,8 +14,8 @@ wujie使用`lerna`工具作为单一源码仓库的管理工具，其内部主�
 
 * wujie-core 包含了微前端业务代码，像核心的`iframe`、`shadowroot`、`html自定义组件`、`代理dom`都在里
 * wujie-vue2 封装了一个vue2组件，可以按照vue2的语法来使用wujie
-* wujie-vue3 封装了一个vue2组件，可以按照vue3的语法来使用wujie
-* wujie-react 封装了一个vue2组件，可以按照react的语法来使用wujie
+* wujie-vue3 封装了一个vue3组件，可以按照vue3的语法来使用wujie
+* wujie-react 封装了一个react组件，可以按照react的语法来使用wujie
 
 使用lerna的作用在于
 
